@@ -1,0 +1,146 @@
+version: '3.8'
+
+networks:
+  db:
+  core:
+  frontend:
+  bots:
+
+volumes:
+  postgres:
+  web:
+  dhparam:
+  etc-letsencrypt:
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      PGDATA: /data/postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres:/data/postgres
+    networks:
+      - db
+      - core
+
+  forum-world-core:
+    container_name: ${FW_CORE_CONTAINER_NAME}
+    image: 777lk777/fw_core:latest
+    volumes:
+      - web:/${FW_CORE_CONTAINER_NAME}/app
+      - /${FW_CORE_CONTAINER_NAME}/app/node_modules
+    environment:      
+      - PORT=${FW_CORE_PORT}
+      - DATABASE_URL=${DATABASE_URL}
+    ports:
+      - "${FW_CORE_PORT}:${FW_CORE_PORT}"
+    depends_on:
+      - postgres
+    command: npm run ${CORE_RUN_CMD}
+    restart: always
+    networks:
+      - core
+
+  forum-world-gateway:
+    container_name: ${FW_GATEWAY_CONTAINER_NAME}
+    image: 777lk777/fw_gateway:latest
+    volumes:
+      - web:/${FW_GATEWAY_CONTAINER_NAME}/app
+      - /${FW_GATEWAY_CONTAINER_NAME}/app/node_modules
+    environment:
+        - PORT=${FW_GATEWAY_PORT}
+        - CORS_ORIGIN_URL=${FW_CORS_URL}
+        - CORE_ORIGIN=${FW_CORE_ORIGIN}
+    ports:
+      - "${FW_GATEWAY_PORT}:${FW_GATEWAY_PORT}"
+    depends_on:
+      - ${FW_CORE_CONTAINER_NAME}
+    command: npm run ${GATEWAY_RUN_CMD}
+    restart: always
+    networks:
+      - core
+      - frontend
+      
+  forum-world-ui:
+    container_name: ${FW_UI_CONTAINER_NAME}
+    image: 777lk777/fw_ui:latest
+    volumes:
+      - web:/${FW_UI_CONTAINER_NAME}/app
+      - /${FW_UI_CONTAINER_NAME}/app/node_modules
+    environment:
+        - GATEWAY_ORIGIN=${FW_GATEWAY_ORIGIN}
+        - GATEWAY_CONTAINER=${FW_GATEWAY_CONTAINER_NAME}
+        - GATEWAY_PORT=${FW_GATEWAY_PORT}
+    ports:
+      - "${FW_UI_PORT}:${FW_UI_PORT}"
+    depends_on:
+      - ${FW_GATEWAY_CONTAINER_NAME}
+    command: npm run ${UI_RUN_CMD} -- -p ${FW_UI_PORT}
+    restart: always
+    networks:
+      - frontend
+
+  forum-world-telegram-bot:
+    container_name: ${FW_TG_BOT_CONTAINER_NAME}
+    image: 777lk777/fw_telegram-bot:latest
+    volumes:
+      - web:/${FW_TG_BOT_CONTAINER_NAME}/app
+      - /${FW_TG_BOT_CONTAINER_NAME}/app/node_modules
+    environment:
+      - WEBHOOK_DOMAIN=${FW_TG_BOT_DOMAIN}
+      - PORT=${FW_TG_BOT_PORT}
+      - TOKEN=${FW_TG_BOT_TOKEN}
+      - WEBHOOK_PATH=${FW_TG_BOT_WEBHOOK_PATH}
+    ports:
+      - ${FW_TG_BOT_PORT}:${FW_TG_BOT_PORT}
+    command: npm run ${TG_BOT_RUN_CMD}
+    restart: always
+    networks:
+      - bots
+
+  nginx:
+    image: macbre/nginx-brotli
+    volumes:
+      - ./entrypoint.sh:/etc/entrypoint.sh
+      - ./templates/:/etc/nginx/templates/
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - dhparam:/etc/ssl/certs
+      - ./snippets:/etc/nginx/snippets/
+      - etc-letsencrypt:/etc/letsencrypt
+    env_file:
+      - ./.env
+    ports:
+      - "80:80"
+      - "443:443"
+    entrypoint: sh -c "chmod +x /etc/entrypoint.sh && /etc/entrypoint.sh"
+    depends_on:
+      - ${FW_CORE_CONTAINER_NAME}
+      - ${FW_GATEWAY_CONTAINER_NAME}
+      - ${FW_UI_CONTAINER_NAME}
+      - ${FW_TG_BOT_CONTAINER_NAME}
+
+  dhparam-gen:
+    image: frapsoft/openssl
+    volumes:
+      - dhparam:/etc/ssl/certs
+    command: dhparam -out /etc/ssl/certs/dhparam.pem 2048
+    depends_on:
+      - nginx
+
+  certbot:
+    image: certbot/certbot
+    depends_on:
+      - nginx
+    container_name: certbot
+    volumes:
+      - etc-letsencrypt:/etc/letsencrypt
+      - web:/
+    command: certonly --webroot --webroot-path=/ --email konoplin.l@mail.ru --agree-tos --no-eff-email -d fw-testing.site -d api.fw-testing.site -d bot.fw-testing.site
+    

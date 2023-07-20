@@ -1,0 +1,55 @@
+server {
+        listen ${PORT};
+        listen [::]:${PORT};
+
+	    server_name ${FW_UI_DOMAIN};
+        return 301 https://www.youtube.com;
+}
+
+server {
+        listen ${PORT};
+        listen [::]:${PORT};
+
+        server_name ${FW_GATEWAY_DOMAIN};
+        return 301 https://vk.com;
+}
+
+#BOT
+server {
+        listen ${PORT};
+        listen [::]:${PORT};
+
+        server_name ${FW_TG_BOT_DOMAIN} www.${FW_TG_BOT_DOMAIN};
+        return 301 https://${FW_TG_BOT_DOMAIN}$request_uri;
+}
+
+server {
+    listen ${SSL_PORT} ssl http2;
+    listen [::]:${SSL_PORT} ssl http2;
+
+    server_name www.${FW_TG_BOT_DOMAIN};
+    return 301 https://${FW_TG_BOT_DOMAIN}$request_uri;
+
+    ssl_certificate /etc/letsencrypt/live/${FW_TG_BOT_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${FW_TG_BOT_DOMAIN}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/${FW_TG_BOT_DOMAIN}/chain.pem;
+
+    include snippets/ssl-params.conf;
+}
+
+server {
+    listen ${SSL_PORT} ssl http2;
+    listen [::]:${SSL_PORT} ssl http2;
+
+    server_name ${FW_TG_BOT_DOMAIN};
+    
+    location / {
+        proxy_pass ${FW_TG_BOT_CONTAINER_NAME}:${FW_TG_BOT_PORT}$request_uri;
+    }
+
+    ssl_certificate /etc/letsencrypt/live/${FW_TG_BOT_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${FW_TG_BOT_DOMAIN}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/${FW_TG_BOT_DOMAIN}/chain.pem;
+
+    include snippets/ssl-params.conf;
+}
